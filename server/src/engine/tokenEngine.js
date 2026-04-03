@@ -115,7 +115,7 @@ class TokenEngine {
     return this.getToken(tokenId);
   }
 
-  // ─── Flag a token (bias detection) ───────────────────────
+  // ─── Flag a token (security violation) ────────────────────
   flagToken(tokenId, flagType, details = {}) {
     const db = getDb();
     const token = this.getToken(tokenId);
@@ -135,9 +135,9 @@ class TokenEngine {
       },
     });
 
-    // Special bias_flag event for human review panel
+    // Security violation event for human review panel
     broadcast({
-      type: 'BIAS_FLAG',
+      type: 'SECURITY_VIOLATION',
       payload: {
         tokenId,
         workflowId: token.workflow_id,

@@ -1,6 +1,7 @@
 // ═══════════════════════════════════════════════════════════
 // Auth0 Token Vault Service
 // Manages credential retrieval via Token Vault exchange flow
+// Agent NEVER accesses credentials directly — all through vault proxy
 // ═══════════════════════════════════════════════════════════
 
 import axios from 'axios';
@@ -18,7 +19,7 @@ class VaultService {
    * Get a credential from Token Vault via RFC 8693 token exchange
    * In mock mode, returns a simulated credential response
    * 
-   * @param {string} serviceName - e.g., 'sendgrid', 'openai'
+   * @param {string} serviceName - e.g., 'gcs-service-account', 'internal-api-key'
    * @param {string} userAccessToken - Auth0 access token for the user
    * @param {string} connectionName - Auth0 connection name (e.g., 'google-oauth2')
    */
@@ -68,32 +69,25 @@ class VaultService {
    */
   _mockCredential(serviceName) {
     const mockCredentials = {
-      openai: {
+      'gcs-service-account': {
         success: true,
-        service: 'openai',
+        service: 'gcs-service-account',
         method: 'token_vault_mock',
-        note: 'Credential securely retrieved from Auth0 Token Vault — agent never sees raw key',
+        note: 'GCS Service Account credential securely retrieved from Auth0 Token Vault — agent never sees raw key',
         retrieved_at: new Date().toISOString(),
       },
-      sendgrid: {
+      'internal-api-key': {
         success: true,
-        service: 'sendgrid',
+        service: 'internal-api-key',
         method: 'token_vault_mock',
-        note: 'SendGrid API key securely retrieved from Auth0 Token Vault',
+        note: 'Internal API key securely retrieved from Auth0 Token Vault — agent never sees raw key',
         retrieved_at: new Date().toISOString(),
       },
-      credit_bureau: {
+      'source-control-token': {
         success: true,
-        service: 'credit_bureau',
+        service: 'source-control-token',
         method: 'token_vault_mock',
-        note: 'Credit Bureau API credential securely retrieved from Auth0 Token Vault',
-        retrieved_at: new Date().toISOString(),
-      },
-      identity_verify: {
-        success: true,
-        service: 'identity_verify',
-        method: 'token_vault_mock',
-        note: 'Identity Verification credential securely retrieved from Auth0 Token Vault',
+        note: 'Source Control token securely stored in Auth0 Token Vault — agent access PROHIBITED',
         retrieved_at: new Date().toISOString(),
       },
     };

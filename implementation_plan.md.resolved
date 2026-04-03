@@ -1,0 +1,168 @@
+# Refactor TokenFlow OS: AI Agent Security Demo
+
+Transform the project from a bias-aware loan workflow system to a **Secure AI Agent Execution System** preventing credential misuse and over-permissioning — inspired by the Google Vertex AI "Double Agent" Data Exposure scenario.
+
+## User Review Required
+
+> [!IMPORTANT]
+> The frontend currently uses **Tailwind CSS v4** (via `@tailwindcss/vite` plugin). The new design will retain this setup since the existing project already uses it. The design.txt aesthetic (dark futuristic, glassmorphism, neon gradients) will be implemented using Tailwind utility classes plus custom CSS.
+
+> [!WARNING]
+> The SQLite database file (`tokenflow.db`) will need to be deleted and recreated since the vault credential seeds are changing. The schema structure stays the same.
+
+---
+
+## Proposed Changes
+
+### Backend Engine Layer
+
+#### [MODIFY] [policyEngine.js](file:///c:/Users/Kavy%20Khilrani/Desktop/Projects/auth0_tokenflow/server/src/engine/policyEngine.js)
+
+Complete rewrite of policy logic:
+- **Remove**: All bias/ZIP code/confidence logic
+- **Add**: `STEP_ORDER` → `['READ_OBJECT', 'CALL_INTERNAL_API', 'WRITE_OBJECT']`
+- **Add**: `canMint()` — validates action type is in allowed workflow steps
+- **Add**: `checkServiceScope(token, requestedService, requestedAction)` — Cross-service check: block if `token.service ≠ requested service`
+- **Add**: `checkScopeEscalation(token, requestedAction)` — block if `token.action ≠ requested action`
+- **Add**: `checkUnauthorizedStep(actionType, stepIndex)` — halt if step isn't in the defined chain
+- **Add**: `UNAUTHORIZED_SERVICES = ['source-control', 'internal-repo']` — services the agent should NOT access
+
+#### [MODIFY] [workflowRunner.js](file:///c:/Users/Kavy%20Khilrani/Desktop/Projects/auth0_tokenflow/server/src/engine/workflowRunner.js)
+
+Rewrite the workflow orchestrator:
+- **Agent**: `agent-cloud-worker` (was `agent-loan-processor`)
+- **Workflow steps**: `READ_OBJECT → CALL_INTERNAL_API → WRITE_OBJECT`
+- **New**: After step 2 (CALL_INTERNAL_API), the agent attempts a **malicious step** `READ_REPO` (unauthorized service access)
+- **New**: Policy engine detects cross-service violation → flags token → halts execution
+- **Remove**: All applicant/loan/credit-score/email-related logic
+- **Replace**: `_executeAction` dispatches to new simulated cloud actions
+- **Keep intact**: Token mint → activate → consume → burn lifecycle, DAG chain linking, kill switch, resume/abort
+
+#### [MODIFY] [tokenEngine.js](file:///c:/Users/Kavy%20Khilrani/Desktop/Projects/auth0_tokenflow/server/src/engine/tokenEngine.js)
+
+Minimal changes — core architecture preserved:
+- Rename broadcast event `BIAS_FLAG` → `SECURITY_VIOLATION` (the event sent for human review)
+- `flagToken` comment updated from "bias detection" to "security violation"
+- Token context now carries `{ service, resource, action }` instead of `{ applicantData }`
+
+---
+
+### Backend Services Layer
+
+#### [MODIFY] [vaultService.js](file:///c:/Users/Kavy%20Khilrani/Desktop/Projects/auth0_tokenflow/server/src/services/vaultService.js)
+
+Update mock credentials:
+- `gcs-service-account` — Google Cloud Storage
+- `internal-api-key` — Internal API endpoint
+- `source-control-token` — Source control (agent should NEVER access this directly)
+
+#### [DELETE] [scoringService.js](file:///c:/Users/Kavy%20Khilrani/Desktop/Projects/auth0_tokenflow/server/src/services/scoringService.js)
+
+No longer needed — credit scoring is removed.
+
+#### [DELETE] [emailService.js](file:///c:/Users/Kavy%20Khilrani/Desktop/Projects/auth0_tokenflow/server/src/services/emailService.js)
+
+No longer needed — email sending is removed.
+
+#### [NEW] [agentService.js](file:///c:/Users/Kavy%20Khilrani/Desktop/Projects/auth0_tokenflow/server/src/services/agentService.js)
+
+New agent action simulation service:
+- `readCloudObject(resource)` — Simulates reading from GCS
+- `callInternalApi(endpoint)` — Simulates calling an internal API
+- `writeCloudObject(resource, data)` — Simulates writing result to GCS
+- `readRepo(resource)` — **The unauthorized action** (simulates agent trying to access source control)
+
+---
+
+### Backend Data Layer
+
+#### [MODIFY] [applicants.js → agentTasks.js](file:///c:/Users/Kavy%20Khilrani/Desktop/Projects/auth0_tokenflow/server/src/data/applicants.js)
+
+Rename file and replace content with agent task definitions:
+- **TASK_NORMAL** — Agent performs read → API call → write (completes cleanly)
+- **TASK_MALICIOUS** — Agent attempts to also access source control repo (gets blocked)
+- Both tasks include: `id`, `name`, `description`, `service`, `resource`, `action` fields
+
+#### [MODIFY] [database.js](file:///c:/Users/Kavy%20Khilrani/Desktop/Projects/auth0_tokenflow/server/src/db/database.js)
+
+Update credential seeds from loan-related to AI agent services:
+- `cred-gcs` → `gcs-service-account` / GCS Service Account
+- `cred-internal-api` → `internal-api-key` / Internal API Key
+- `cred-source-control` → `source-control-token` / Source Control Token
+
+Schema SQL stays unchanged (same table structures).
+
+---
+
+### Backend Routes Layer
+
+#### [MODIFY] [workflowRoutes.js](file:///c:/Users/Kavy%20Khilrani/Desktop/Projects/auth0_tokenflow/server/src/routes/workflowRoutes.js)
+
+- Replace `applicantData/applicantId` with `taskId/taskData`
+- Update `/applicants/list` → `/tasks/list`
+- Keep all other routes: `start`, `resume`, `revoke`, `kill`, list, detail
+- Update review queue builder for new context
+
+#### [MODIFY] [dashboardRoutes.js](file:///c:/Users/Kavy%20Khilrani/Desktop/Projects/auth0_tokenflow/server/src/routes/dashboardRoutes.js)
+
+- Replace `applicant_data` references with `task_data`
+- Replace `applicant` field in review queue with `task`
+
+#### Token routes, vault routes, middleware (tokenRoutes.js, vaultRoutes.js, tokenMiddleware.js, auth0Middleware.js) — **NO CHANGES** needed
+
+---
+
+### Frontend
+
+#### [MODIFY] [App.jsx](file:///c:/Users/Kavy%20Khilrani/Desktop/Projects/auth0_tokenflow/client/src/App.jsx)
+
+**Complete rewrite** following the design.txt aesthetic:
+
+1. **Design system**: Dark futuristic theme (`#0B0F19` bg, `#6C63FF` primary purple, `#00D1FF` neon blue), glassmorphism cards, neon glow effects
+2. **Layout**: Landing page hero + scrollable dashboard sections
+3. **Hero section**: "Secure AI Agent Execution" heading, CTA "Start Secure AI Execution"
+4. **Features bento grid**: Capability-based security, Tokenized execution, Credential isolation, Real-time control
+5. **Dashboard view**: Token chain DAG, burn progression, step execution, chain break on unauthorized action
+6. **Alert system**: Red alerts for "Unauthorized cross-service access detected", "Token invalid for requested action"
+7. **Visual indicators**: Safe=cyan/green, Risk=amber, Blocked=red
+8. **Animations**: Token flow animation, DAG progression, glassmorphism hover effects
+9. **Replace all loan/bias UI text** with AI agent security language
+10. **New workflow selector**: Shows agent tasks instead of applicants
+
+#### [MODIFY] [index.css](file:///c:/Users/Kavy%20Khilrani/Desktop/Projects/auth0_tokenflow/client/src/index.css)
+
+Update design tokens:
+- Use Inter/Poppins fonts instead of IBM Plex
+- New color palette from design.txt
+- Glassmorphism base styles
+- Glow/neon animation keyframes
+- Card hover effects (scale + glow)
+
+#### [MODIFY] [index.html](file:///c:/Users/Kavy%20Khilrani/Desktop/Projects/auth0_tokenflow/client/index.html)
+
+Update title and meta description for AI agent security theme.
+
+---
+
+## Open Questions
+
+> [!IMPORTANT]
+> **Task selection for demo**: I plan to have two predefined agent tasks — one that completes normally (TASK-001) and one that triggers the unauthorized step (TASK-002, default selected). This mirrors the current flagged/clean applicant pattern. Does this approach work for you?
+
+---
+
+## Verification Plan
+
+### Automated Tests
+1. Delete the old `tokenflow.db` and start the server — verify schema creates cleanly
+2. Start a "normal" workflow via the UI — verify all 3 steps (READ_OBJECT → CALL_INTERNAL_API → WRITE_OBJECT) complete with burned tokens
+3. Start a "malicious" workflow — verify step 3 attempt to READ_REPO triggers security violation, flags token, halts execution
+4. Kill switch — verify all tokens are revoked for a running workflow
+5. Token chain integrity — verify parent chain linking is correct
+6. WebSocket — verify real-time updates stream to frontend
+
+### Manual Verification
+- Visual inspection of the new dark futuristic UI with glassmorphism effects
+- Verify the token chain DAG animates correctly
+- Verify blocked step shows red indicator with security alert
+- Verify credential vault shows new services

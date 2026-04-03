@@ -1,0 +1,232 @@
+AI SaaS Website Design File (Sapforce-Inspired)
+🔷 1. Visual Direction (Core Idea)
+4
+
+Theme:
+
+Dark futuristic UI + glowing gradients
+3D abstract AI visuals (floating shapes / neural patterns)
+Clean SaaS structure (high conversion focus)
+
+Design Philosophy:
+
+“AI evolving continuously” → use motion + loops
+Minimal text, maximum visual clarity
+Strong CTA-driven layout
+🎯 2. Page Structure (Full Layout)
+🧱 Sections Overview
+Navbar
+Hero Section
+Trusted By / Logos
+Features (Bento Grid)
+How It Works
+Dashboard Preview
+Pricing
+Testimonials
+CTA Section
+Footer
+🧩 3. Component-Level Design
+🔝 Navbar
+
+Layout:
+
+Left: Logo (text or minimal icon)
+Center: Links (Features, Pricing, Docs)
+Right:
+Login (ghost button)
+Get Started (primary button)
+
+Style:
+
+Background: transparent → blur on scroll
+Height: 72px
+🚀 Hero Section
+4
+
+Layout:
+
+Left:
+Heading (bold, large)
+Subheading
+CTA buttons (2)
+Right:
+3D animated visual / AI graphic
+
+Content Example:
+
+Heading: “Build Smarter AI Systems Faster”
+Sub: Automate, analyze, and scale with next-gen AI tools
+
+CTA:
+
+Primary: Get Started
+Secondary: Book Demo
+
+Style:
+
+Gradient background (dark purple → blue)
+Floating particles / glow effects
+🧠 Features Section (Bento Grid)
+
+Layout:
+
+Grid (2x2 or 3x2)
+Cards of different sizes (bento style)
+
+Each Card:
+
+Icon / mini 3D visual
+Title
+1–2 line description
+
+Example Features:
+
+AI Automation
+Data Insights
+Workflow Builder
+API Integration
+
+Style:
+
+Glassmorphism cards
+Hover = glow + slight scale
+⚙️ How It Works
+
+Layout:
+
+Horizontal steps (3–4 steps)
+
+Steps Example:
+
+Connect Data
+Train Model
+Deploy AI
+Monitor Performance
+
+Style:
+
+Icons + connecting line
+Subtle animation on scroll
+📊 Dashboard Preview
+4
+
+Layout:
+
+Centered large dashboard image
+Floating cards around (metrics)
+
+Content:
+
+Graphs
+AI insights
+KPI cards
+
+Style:
+
+Slight 3D tilt
+Glow borders
+💰 Pricing Section
+
+Layout:
+
+3 pricing cards (Starter, Pro, Enterprise)
+
+Card Structure:
+
+Plan name
+Price
+Features list
+CTA button
+
+Highlight:
+
+Middle plan (scale + glow)
+⭐ Testimonials
+
+Layout:
+
+Carousel or 3-card grid
+
+Each Card:
+
+User image
+Name + role
+Quote
+📢 CTA Section
+
+Content:
+
+Big heading: “Start building with AI today”
+Button: Get Started
+
+Style:
+
+Strong gradient background
+Center aligned
+🔚 Footer
+
+Columns:
+
+Product
+Company
+Resources
+Social links
+🎨 4. Design System
+🎨 Colors
+Primary: #6C63FF (AI purple)
+Secondary: #00D1FF (neon blue)
+Background: #0B0F19
+Surface: #121826
+Text:
+Primary: #FFFFFF
+Secondary: #A0A7B8
+🔤 Typography
+Headings: Inter / Poppins (Bold)
+Body: Inter (Regular)
+
+Sizes:
+
+H1: 56px
+H2: 40px
+H3: 24px
+Body: 16px
+🔘 Buttons
+Primary:
+Gradient fill
+Rounded (12px)
+Secondary:
+Outline / glass
+🧊 Effects
+Glassmorphism:
+blur(20px)
+rgba(255,255,255,0.05)
+Glow:
+soft neon shadows
+Hover:
+scale(1.03)
+glow increase
+⚡ 5. Interactions & Animations
+Hero:
+floating 3D animation loop
+Scroll:
+fade + slide up
+Cards:
+hover glow + tilt
+Dashboard:
+parallax effect
+CTA:
+pulse animation
+🛠️ 6. Responsive Behavior
+Mobile
+Stack all sections vertically
+Hero image below text
+Bento → single column
+Navbar → hamburger
+Tablet
+2-column grid
+Reduced spacing
+🧠 7. Key UX Principles (Important)
+Clear value in first 5 seconds
+Minimal cognitive load
+Strong CTA visibility
+Visual storytelling via AI graphics

@@ -1,50 +1,51 @@
 // ═══════════════════════════════════════════════════════════
-// Workflow Runner — Orchestrates the loan application demo
+// Workflow Runner — Orchestrates the AI agent execution demo
+// Demonstrates: normal execution, malicious step detection,
+// cross-service blocking, and token chain enforcement
 // ═══════════════════════════════════════════════════════════
 
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../db/database.js';
 import { tokenEngine } from './tokenEngine.js';
 import { policyEngine } from './policyEngine.js';
-import { calculateScore } from '../services/scoringService.js';
-import { sendDecisionEmail } from '../services/emailService.js';
+import { readCloudObject, callInternalApi, writeCloudObject, readRepo } from '../services/agentService.js';
 import { vaultService } from '../services/vaultService.js';
 import { broadcast } from '../websocket/wsServer.js';
 
-const AGENT_ID = 'agent-loan-processor';
+const AGENT_ID = 'agent-cloud-worker';
 
 // Step execution delay (ms) — slowed for visual demo
 const STEP_DELAY = 1500;
 
 class WorkflowRunner {
   /**
-   * Start a new loan application workflow
+   * Start a new agent workflow
    */
-  async startWorkflow(applicantData) {
+  async startWorkflow(taskData) {
     const db = getDb();
     const workflowId = `wf_${uuidv4().slice(0, 12)}`;
 
     db.prepare(`
       INSERT INTO workflows (id, name, status, applicant_data, current_step)
       VALUES (?, ?, 'running', ?, 0)
-    `).run(workflowId, `Loan Application — ${applicantData.name}`, JSON.stringify(applicantData));
+    `).run(workflowId, `Agent Task — ${taskData.name}`, JSON.stringify(taskData));
 
     broadcast({
       type: 'WORKFLOW_EVENT',
       payload: {
         event: 'STARTED',
         workflowId,
-        applicantData,
+        taskData,
         timestamp: new Date().toISOString(),
       },
     });
 
-    console.log(`[WORKFLOW] Started ${workflowId} for ${applicantData.name}`);
+    console.log(`[WORKFLOW] Started ${workflowId} for task ${taskData.name}`);
 
     // Begin step 1 after a short delay for visual effect
     setTimeout(() => this.executeStep(workflowId, 0), STEP_DELAY);
 
-    return { workflowId, status: 'running', applicantData };
+    return { workflowId, status: 'running', taskData };
   }
 
   /**
@@ -55,8 +56,18 @@ class WorkflowRunner {
     if (!workflow) throw new Error(`Workflow ${workflowId} not found`);
     if (workflow.status === 'aborted' || workflow.status === 'completed') return;
 
-    const applicantData = JSON.parse(workflow.applicant_data);
+    const taskData = JSON.parse(workflow.applicant_data);
     const steps = policyEngine.getStepOrder();
+
+    // ── MALICIOUS STEP INJECTION ──────────────────────────────
+    // If the task is malicious and we've just finished step 2 (CALL_INTERNAL_API),
+    // inject the unauthorized READ_REPO attempt before WRITE_OBJECT
+    if (taskData.malicious && stepIndex === 2 && taskData.malicious_step) {
+      console.log(`[WORKFLOW] ⚠ Compromised agent attempting unauthorized step...`);
+      await this._attemptMaliciousStep(workflowId, taskData, stepIndex);
+      return; // Execution halts — the malicious step was blocked
+    }
+
     const actionType = steps[stepIndex];
 
     if (!actionType) {
@@ -66,23 +77,36 @@ class WorkflowRunner {
       return;
     }
 
+    // Get step permissions from policy engine
+    const stepPermissions = policyEngine.getStepPermissions(actionType);
+    const stepDef = taskData.steps?.[stepIndex];
+
     // Get previous token ID for chain linking
     const chain = tokenEngine.getTokenChain(workflowId);
     const parentTokenId = chain.length > 0 ? chain[chain.length - 1].id : null;
 
     // Mint token for this step
-    const policy = policyEngine.canMint(actionType, { applicantData });
+    const policy = policyEngine.canMint(actionType, { taskData });
     if (!policy.allowed) {
       console.error(`[WORKFLOW] Policy denied minting for ${actionType}: ${policy.reason}`);
       return;
     }
 
+    // Token context includes service, resource, action scoping
+    const tokenContext = {
+      taskData: { id: taskData.id, name: taskData.name },
+      stepIndex,
+      service: stepPermissions?.service || stepDef?.service,
+      resource: stepPermissions?.resource || stepDef?.resource,
+      action: stepPermissions?.action || stepDef?.actionVerb,
+    };
+
     const token = tokenEngine.mintToken(
       workflowId,
       actionType,
-      applicantData.id,
+      stepDef?.resource || stepPermissions?.resource,
       AGENT_ID,
-      { applicantData, stepIndex },
+      tokenContext,
       parentTokenId,
       stepIndex
     );
@@ -101,9 +125,9 @@ class WorkflowRunner {
 
     // Execute the step action
     try {
-      const result = await this._executeAction(actionType, applicantData, workflowId, token.id, stepIndex);
+      const result = await this._executeAction(actionType, taskData, workflowId, token.id, stepIndex);
 
-      // Check if bias was flagged — pause workflow
+      // Check if security violation was flagged — pause workflow
       if (result._paused) {
         this._updateWorkflow(workflowId, 'paused', stepIndex);
         return; // Wait for human review
@@ -123,6 +147,68 @@ class WorkflowRunner {
   }
 
   /**
+   * Attempt an unauthorized (malicious) step — this SHOULD be blocked
+   */
+  async _attemptMaliciousStep(workflowId, taskData, stepIndex) {
+    const maliciousStep = taskData.malicious_step;
+    const chain = tokenEngine.getTokenChain(workflowId);
+    const parentTokenId = chain.length > 0 ? chain[chain.length - 1].id : null;
+
+    // The compromised agent tries to mint a token for the unauthorized step
+    // We mint it to show the attempt, then immediately flag it
+    const tokenContext = {
+      taskData: { id: taskData.id, name: taskData.name },
+      stepIndex,
+      service: maliciousStep.service,        // source-control (unauthorized!)
+      resource: maliciousStep.resource,       // internal/secrets-config.yaml
+      action: maliciousStep.actionVerb,       // read
+      malicious: true,
+    };
+
+    // Mint token for the unauthorized step (to show the attempt in the chain)
+    const token = tokenEngine.mintToken(
+      workflowId,
+      maliciousStep.action,                   // READ_REPO
+      maliciousStep.resource,
+      AGENT_ID,
+      tokenContext,
+      parentTokenId,
+      stepIndex
+    );
+
+    await this._delay(STEP_DELAY);
+
+    // Run security validation
+    const validation = policyEngine.validateExecution(
+      maliciousStep.action,
+      stepIndex,
+      tokenContext,
+      maliciousStep.service,
+      maliciousStep.actionVerb
+    );
+
+    if (!validation.allowed) {
+      console.log(`[WORKFLOW] 🛑 SECURITY VIOLATION DETECTED — Blocking unauthorized step`);
+
+      // Flag the token with all violation details
+      tokenEngine.flagToken(token.id, 'SECURITY_VIOLATION', {
+        violations: validation.violations.map(v => ({
+          type: v.violation,
+          ...v.details,
+        })),
+        summary: `Unauthorized cross-service access detected: Agent attempted to access "${maliciousStep.service}" service to read "${maliciousStep.resource}"`,
+        attempted_action: maliciousStep.action,
+        attempted_service: maliciousStep.service,
+        attempted_resource: maliciousStep.resource,
+        taskData: { id: taskData.id, name: taskData.name },
+      });
+
+      this._updateWorkflow(workflowId, 'paused', stepIndex);
+      return;
+    }
+  }
+
+  /**
    * Resume a paused workflow after human review approval
    */
   async resumeWorkflow(workflowId) {
@@ -131,7 +217,7 @@ class WorkflowRunner {
     if (!workflow) throw new Error(`Workflow ${workflowId} not found`);
     if (workflow.status !== 'paused') throw new Error(`Workflow ${workflowId} is ${workflow.status}, not paused`);
 
-    const applicantData = JSON.parse(workflow.applicant_data);
+    const taskData = JSON.parse(workflow.applicant_data);
 
     // Find the flagged token and burn it with review result
     const chain = tokenEngine.getTokenChain(workflowId);
@@ -157,9 +243,15 @@ class WorkflowRunner {
 
     console.log(`[WORKFLOW] Resumed ${workflowId}`);
 
-    // Continue to next step
+    // Continue to the next legitimate step (skip the malicious one)
     await this._delay(STEP_DELAY);
-    this.executeStep(workflowId, workflow.current_step + 1);
+
+    // If the task was malicious and we were at step 2 (the malicious injection point),
+    // resume at step 2 which is WRITE_OBJECT in the legitimate chain
+    const resumeStep = workflow.current_step;
+    // The flagged step was an injected malicious step at index 2,
+    // so resuming means continuing with legitimate step 2 (WRITE_OBJECT)
+    this.executeStep(workflowId, resumeStep);
 
     return { workflowId, status: 'running' };
   }
@@ -180,7 +272,7 @@ class WorkflowRunner {
       payload: {
         event: 'ABORTED',
         workflowId,
-        reason: 'Human reviewer rejected',
+        reason: 'Human reviewer rejected — security violation confirmed',
         timestamp: new Date().toISOString(),
       },
     });
@@ -212,123 +304,22 @@ class WorkflowRunner {
 
   // ─── Internal action execution ────────────────────────────
 
-  async _executeAction(actionType, applicantData, workflowId, tokenId, stepIndex) {
+  async _executeAction(actionType, taskData, workflowId, tokenId, stepIndex) {
+    const stepDef = taskData.steps?.[stepIndex];
+
     switch (actionType) {
-      case 'READ_APPLICANT_DATA':
-        return this._readApplicantData(applicantData);
+      case 'READ_OBJECT':
+        return readCloudObject(stepDef?.resource || 'default/input.json');
 
-      case 'RUN_CREDIT_SCORE':
-        return this._runCreditScore(applicantData, workflowId, tokenId);
+      case 'CALL_INTERNAL_API':
+        return callInternalApi(stepDef?.resource || 'api/process');
 
-      case 'APPROVE_OR_DENY':
-        return this._approveOrDeny(applicantData, workflowId);
-
-      case 'SEND_DECISION_EMAIL':
-        return this._sendDecisionEmail(applicantData, workflowId);
+      case 'WRITE_OBJECT':
+        return writeCloudObject(stepDef?.resource || 'default/output.json');
 
       default:
         throw new Error(`Unknown action: ${actionType}`);
     }
-  }
-
-  async _readApplicantData(applicantData) {
-    console.log(`[ACTION] Reading applicant data for ${applicantData.name}`);
-    // Simulate reading from a database/API
-    await vaultService.getCredential('identity_verify');
-
-    return {
-      action: 'READ_APPLICANT_DATA',
-      data: {
-        name: applicantData.name,
-        zip_code: applicantData.zip_code,
-        income: applicantData.income,
-        requested_amount: applicantData.requested_amount,
-        employment_status: applicantData.employment_status,
-        employment_years: applicantData.employment_years,
-      },
-      message: `Applicant data read successfully for ${applicantData.name}`,
-    };
-  }
-
-  async _runCreditScore(applicantData, workflowId, tokenId) {
-    console.log(`[ACTION] Running credit score for ${applicantData.name}`);
-
-    // Retrieve credit bureau credential from vault
-    await vaultService.getCredential('credit_bureau');
-
-    // Calculate score
-    const scoreResult = calculateScore(applicantData);
-
-    // Check for bias
-    const biasCheck = policyEngine.checkBias('RUN_CREDIT_SCORE', {
-      ...scoreResult,
-      zip_code: applicantData.zip_code,
-    });
-
-    if (biasCheck.flagged) {
-      console.log(`[ACTION] Bias detected — pausing workflow`);
-      tokenEngine.flagToken(tokenId, biasCheck.flagType, {
-        ...biasCheck.details,
-        applicantData: {
-          name: applicantData.name,
-          zip_code: applicantData.zip_code,
-          income: applicantData.income,
-          requested_amount: applicantData.requested_amount,
-        },
-        scoreResult,
-      });
-
-      return { _paused: true, scoreResult, biasCheck };
-    }
-
-    return {
-      action: 'RUN_CREDIT_SCORE',
-      scoreResult,
-      message: `Credit score: ${scoreResult.score}, Confidence: ${(scoreResult.confidence * 100).toFixed(1)}%`,
-    };
-  }
-
-  async _approveOrDeny(applicantData, workflowId) {
-    console.log(`[ACTION] Making approval decision for ${applicantData.name}`);
-
-    // Get the score from previous step
-    const chain = tokenEngine.getTokenChain(workflowId);
-    const scoreToken = chain.find(t => t.action_type === 'RUN_CREDIT_SCORE');
-    const scoreResult = scoreToken?.context?.result?.scoreResult || calculateScore(applicantData);
-
-    const decision = scoreResult.score >= 600 ? 'approved' : 'denied';
-
-    // Store decision in workflow
-    const db = getDb();
-    const workflow = this.getWorkflow(workflowId);
-    const workflowData = JSON.parse(workflow.applicant_data);
-    workflowData._decision = decision;
-    workflowData._scoreResult = scoreResult;
-    db.prepare('UPDATE workflows SET applicant_data = ? WHERE id = ?').run(JSON.stringify(workflowData), workflowId);
-
-    return {
-      action: 'APPROVE_OR_DENY',
-      decision,
-      score: scoreResult.score,
-      message: `Loan ${decision} for ${applicantData.name} (score: ${scoreResult.score})`,
-    };
-  }
-
-  async _sendDecisionEmail(applicantData, workflowId) {
-    console.log(`[ACTION] Sending decision email to ${applicantData.email}`);
-
-    const workflow = this.getWorkflow(workflowId);
-    const workflowData = JSON.parse(workflow.applicant_data);
-    const decision = workflowData._decision || 'denied';
-    const scoreResult = workflowData._scoreResult || {};
-
-    const emailResult = await sendDecisionEmail(applicantData, decision, scoreResult);
-
-    return {
-      action: 'SEND_DECISION_EMAIL',
-      emailResult,
-      message: `Decision email sent to ${applicantData.email} — ${decision}`,
-    };
   }
 
   // ─── Query helpers ────────────────────────────────────────

@@ -7,19 +7,19 @@ const router = Router();
 
 router.get('/overview', (req, res) => {
   const workflows = workflowRunner.listWorkflows().map((workflow) => {
-    let applicantData = workflow.applicant_data;
+    let taskData = workflow.applicant_data;
 
-    if (applicantData) {
+    if (taskData) {
       try {
-        applicantData = JSON.parse(applicantData);
+        taskData = JSON.parse(taskData);
       } catch {
-        applicantData = null;
+        taskData = null;
       }
     }
 
     return {
       ...workflow,
-      applicant_data: applicantData,
+      applicant_data: taskData,
       token_summary: tokenEngine.getTokenChain(workflow.id).reduce((acc, token) => {
         acc[token.status] = (acc[token.status] || 0) + 1;
         return acc;
@@ -39,7 +39,7 @@ router.get('/overview', (req, res) => {
       return {
         workflowId: workflow.id,
         workflowName: workflow.name,
-        applicant: workflow.applicant_data,
+        task: workflow.applicant_data,
         flaggedToken,
         review: flagEvent?.details || null,
       };

@@ -39,10 +39,9 @@ function seedVaultCredentials(db) {
   `);
 
   const credentials = [
-    ['cred-openai', 'openai', 'OpenAI API', 'token_vault', 'connected'],
-    ['cred-sendgrid', 'sendgrid', 'SendGrid Email API', 'token_vault', 'connected'],
-    ['cred-credit-bureau', 'credit_bureau', 'Credit Bureau API', 'token_vault', 'connected'],
-    ['cred-identity-verify', 'identity_verify', 'Identity Verification Service', 'token_vault', 'connected'],
+    ['cred-gcs', 'gcs-service-account', 'GCS Service Account', 'token_vault', 'connected'],
+    ['cred-internal-api', 'internal-api-key', 'Internal API Key', 'token_vault', 'connected'],
+    ['cred-source-control', 'source-control-token', 'Source Control Token', 'token_vault', 'restricted'],
   ];
 
   const insertMany = db.transaction((creds) => {

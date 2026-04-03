@@ -1,7 +1,7 @@
 {
   "name": "tokenflow-os",
   "version": "1.0.0",
-  "description": "Capability-based execution runtime for AI agents — auditable, pausable, bias-detectable token chains",
+  "description": "Capability-based execution runtime for AI agents — preventing credential misuse and over-permissioned access via tokenized execution",
   "private": true,
   "workspaces": [
     "server",

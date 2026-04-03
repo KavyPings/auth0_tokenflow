@@ -1,34 +1,34 @@
 import { Router } from 'express';
 import { workflowRunner } from '../engine/workflowRunner.js';
 import { tokenEngine } from '../engine/tokenEngine.js';
-import { ALL_APPLICANTS, getApplicantById } from '../data/applicants.js';
+import { ALL_TASKS, getTaskById } from '../data/agentTasks.js';
 
 const router = Router();
 
 router.post('/start', async (req, res) => {
   try {
-    let applicantData = req.body.applicantData;
+    let taskData = req.body.taskData;
 
-    if (req.body.applicantId) {
-      applicantData = getApplicantById(req.body.applicantId);
-      if (!applicantData) {
-        return res.status(404).json({ error: `Applicant ${req.body.applicantId} not found` });
+    if (req.body.taskId) {
+      taskData = getTaskById(req.body.taskId);
+      if (!taskData) {
+        return res.status(404).json({ error: `Task ${req.body.taskId} not found` });
       }
     }
 
-    if (!applicantData) {
-      return res.status(400).json({ error: 'Missing applicantData or applicantId' });
+    if (!taskData) {
+      return res.status(400).json({ error: 'Missing taskData or taskId' });
     }
 
-    const result = await workflowRunner.startWorkflow(applicantData);
+    const result = await workflowRunner.startWorkflow(taskData);
     res.status(201).json({ success: true, ...result });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-router.get('/applicants/list', (req, res) => {
-  res.json({ success: true, applicants: ALL_APPLICANTS });
+router.get('/tasks/list', (req, res) => {
+  res.json({ success: true, tasks: ALL_TASKS });
 });
 
 router.get('/review/queue', (req, res) => {
