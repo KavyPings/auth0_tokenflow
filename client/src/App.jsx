@@ -114,6 +114,7 @@ export default function App() {
   const [socketState, setSocketState] = useState('connecting');
   const refreshTimeoutRef = useRef(null);
   const selectedWorkflowIdRef = useRef(selectedWorkflowId);
+  const [pulseIndex, setPulseIndex] = useState(0);
 
   const workflows = overview?.workflows || [];
   const currentWorkflow = workflows.find((w) => w.id === selectedWorkflowId) || workflows[0] || null;
@@ -140,6 +141,10 @@ export default function App() {
   useEffect(() => { loadDashboard().catch((e) => setError(e.message)); }, [loadDashboard]);
   useEffect(() => { loadChain(selectedWorkflowId).catch((e) => setError(e.message)); }, [selectedWorkflowId, loadChain]);
   useEffect(() => { selectedWorkflowIdRef.current = selectedWorkflowId; }, [selectedWorkflowId]);
+  useEffect(() => {
+    const interval = setInterval(() => setPulseIndex((value) => value + 1), 3200);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     const ws = new WebSocket(getWebSocketUrl());
@@ -181,6 +186,52 @@ export default function App() {
     if (wfId) setSelectedWorkflowId(wfId);
     setPage('chain');
   }
+
+  const currentChainProgress = chainNodes.length
+    ? Math.round((chainNodes.filter((node) => node.status === 'burned').length / chainNodes.length) * 100)
+    : 0;
+
+  const statusSignals = [
+    {
+      label: 'Execution',
+      value: currentWorkflow ? currentWorkflow.name : 'Awaiting launch',
+      meta: currentWorkflow ? `${currentWorkflow.status} - ${currentWorkflow.id.slice(0, 12)}` : 'Start a workflow to populate the chain',
+      tone: currentWorkflow?.status === 'paused' ? 'warning' : currentWorkflow ? 'primary' : 'neutral',
+      page: currentWorkflow ? 'chain' : 'launch',
+      msym: 'hub',
+    },
+    {
+      label: 'Review queue',
+      value: reviewQueue.length ? `${reviewQueue.length} intercepts live` : 'No active alerts',
+      meta: reviewQueue.length ? 'Security is waiting on human review' : 'Guardrails are holding steady',
+      tone: reviewQueue.length ? 'danger' : 'success',
+      page: 'security',
+      msym: 'shield',
+    },
+    {
+      label: 'Vault boundary',
+      value: `${credentials.length} credentials isolated`,
+      meta: health?.auth0 ? `Auth layer: ${String(health.auth0).toUpperCase()}` : 'Vault telemetry online',
+      tone: 'secondary',
+      page: 'vault',
+      msym: 'lock',
+    },
+    {
+      label: 'Socket stream',
+      value: socketState === 'live' ? 'Realtime link healthy' : `Link ${socketState}`,
+      meta: `${workflows.length} workflows mirrored into the UI`,
+      tone: socketState === 'live' ? 'success' : 'warning',
+      page: 'audit',
+      msym: 'sensors',
+    },
+  ];
+
+  const tickerItems = [
+    `${workflows.length} workflow${workflows.length === 1 ? '' : 's'} tracked in mission control`,
+    reviewQueue.length ? `${reviewQueue.length} workflow${reviewQueue.length === 1 ? '' : 's'} waiting on security review` : 'No review queue pressure right now',
+    currentWorkflow ? `${currentChainProgress}% of the selected chain has already burned through execution` : 'Launch a scenario to animate the capability chain',
+    credentials.length ? `${credentials.length} backend credentials remain vault-brokered and hidden from the agent` : 'Vault registry is ready for live credentials',
+  ];
 
   return (
     <div className="min-h-screen">
@@ -226,19 +277,101 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      <LiveStatusRail
+        signals={statusSignals}
+        tickerItems={tickerItems}
+        pulseIndex={pulseIndex}
+        onNavigate={setPage}
+      />
+
       <div className="main-wrap">
         <AnimatePresence mode="wait">
-          {page === 'landing' && <LandingPage key="landing" onEnter={setPage} />}
-          {page === 'dashboard' && <DashboardPage key="d" workflows={workflows} reviewQueue={reviewQueue} credentials={credentials} health={health} goToChain={goToChain} setPage={setPage} />}
-          {page === 'chain' && <ChainPage key="c" workflows={workflows} chainNodes={chainNodes} currentWorkflow={currentWorkflow} selectedWorkflowId={selectedWorkflowId} setSelectedWorkflowId={setSelectedWorkflowId} audit={audit} onKill={() => handleKill(currentWorkflow?.id)} busyAction={busyAction} />}
-          {page === 'audit' && <AuditPage key="a" audit={audit} />}
-          {page === 'security' && <SecurityPage key="s" currentReview={currentReview} reviewQueue={reviewQueue} onResume={handleResume} onRevoke={handleRevoke} busyAction={busyAction} />}
-          {page === 'vault' && <VaultPage key="v" credentials={credentials} health={health} />}
-          {page === 'launch' && <LaunchPage key="l" tasks={tasks} selectedTask={selectedTask} setSelectedTask={setSelectedTask} onStart={handleStart} busyAction={busyAction} />}
-          {page === 'testbench' && <TestbenchPage key="tb" />}
-          {page === 'upload' && <UploadPage key="up" setPage={setPage} />}
-          {page === 'incident' && <IncidentPage key="inc" />}
+          <motion.div
+            key={page}
+            className="page-stage"
+            initial={{ opacity: 0, y: 16, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -12, scale: 0.99 }}
+            transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
+          >
+            {page === 'landing' && <LandingPage key="landing" onEnter={setPage} />}
+            {page === 'dashboard' && (
+              <DashboardPage
+                key="d"
+                workflows={workflows}
+                reviewQueue={reviewQueue}
+                credentials={credentials}
+                health={health}
+                currentWorkflow={currentWorkflow}
+                chainNodes={chainNodes}
+                audit={audit}
+                socketState={socketState}
+                onKill={() => handleKill(currentWorkflow?.id)}
+                busyAction={busyAction}
+                goToChain={goToChain}
+                setPage={setPage}
+              />
+            )}
+            {page === 'chain' && <ChainPage key="c" workflows={workflows} chainNodes={chainNodes} currentWorkflow={currentWorkflow} selectedWorkflowId={selectedWorkflowId} setSelectedWorkflowId={setSelectedWorkflowId} audit={audit} onKill={() => handleKill(currentWorkflow?.id)} busyAction={busyAction} />}
+            {page === 'audit' && <AuditPage key="a" audit={audit} />}
+            {page === 'security' && <SecurityPage key="s" currentReview={currentReview} reviewQueue={reviewQueue} onResume={handleResume} onRevoke={handleRevoke} busyAction={busyAction} />}
+            {page === 'vault' && <VaultPage key="v" credentials={credentials} health={health} />}
+            {page === 'launch' && <LaunchPage key="l" tasks={tasks} selectedTask={selectedTask} setSelectedTask={setSelectedTask} onStart={handleStart} busyAction={busyAction} />}
+            {page === 'testbench' && <TestbenchPage key="tb" />}
+            {page === 'upload' && <UploadPage key="up" setPage={setPage} />}
+            {page === 'incident' && <IncidentPage key="inc" />}
+          </motion.div>
         </AnimatePresence>
+      </div>
+    </div>
+  );
+}
+
+function LiveStatusRail({ signals, tickerItems, pulseIndex, onNavigate }) {
+  const toneMap = {
+    primary: ['var(--primary)', 'rgba(196, 192, 255, 0.14)'],
+    secondary: ['var(--secondary)', 'rgba(166, 230, 255, 0.12)'],
+    success: ['var(--success)', 'rgba(52, 211, 153, 0.12)'],
+    warning: ['var(--warning)', 'rgba(251, 191, 36, 0.12)'],
+    danger: ['var(--error)', 'rgba(255, 180, 171, 0.14)'],
+    neutral: ['var(--outline)', 'rgba(145, 143, 161, 0.1)'],
+  };
+
+  return (
+    <div className="status-rail-wrap">
+      <div className="status-rail">
+        <div className="status-rail-grid">
+          {signals.map((signal, index) => {
+            const [accent, tint] = toneMap[signal.tone] || toneMap.neutral;
+            const isActive = index === pulseIndex % signals.length;
+            return (
+              <motion.button
+                key={signal.label}
+                type="button"
+                whileHover={{ y: -2 }}
+                whileTap={{ scale: 0.99 }}
+                onClick={() => signal.page && onNavigate(signal.page)}
+                className={`status-card ${isActive ? 'is-active' : ''}`}
+                style={{ '--signal-accent': accent, '--signal-tint': tint }}
+              >
+                <div className="status-card-top">
+                  <span className="status-card-label">{signal.label}</span>
+                  <span className="status-card-icon"><M icon={signal.msym} style={{ fontSize: 16, color: accent }} /></span>
+                </div>
+                <strong className="status-card-value">{signal.value}</strong>
+                <span className="status-card-meta">{signal.meta}</span>
+              </motion.button>
+            );
+          })}
+        </div>
+
+        <div className="status-ticker" aria-hidden="true">
+          <div className="ticker-track">
+            {[...tickerItems, ...tickerItems].map((item, index) => (
+              <span key={`${item}-${index}`} className="ticker-pill">{item}</span>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -247,28 +380,111 @@ export default function App() {
 /* ═══════════════════════════════════════════════════════════
    PAGE: Dashboard
    ═══════════════════════════════════════════════════════════ */
-function DashboardPage({ workflows, reviewQueue, credentials, health, setPage, goToChain }) {
+function DashboardPage({ workflows, reviewQueue, credentials, health, currentWorkflow, chainNodes, audit, socketState, onKill, busyAction, setPage, goToChain }) {
   const totalTokens = workflows.reduce((s, w) => s + Object.values(w.token_summary || {}).reduce((a, b) => a + b, 0), 0);
   const burnedTokens = workflows.reduce((s, w) => s + (w.token_summary?.burned || 0), 0);
+  const liveNodes = chainNodes.length ? chainNodes : STEP_ORDER.map((action, index) => ({ id: `preview-${action}-${index}`, action, status: 'pending', token: null }));
+  const recentEvents = audit.slice(-4).reverse();
+  const progress = chainNodes.length ? Math.round((chainNodes.filter((node) => node.status === 'burned').length / chainNodes.length) * 100) : 0;
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      {/* Hero */}
-      <section className="hero-section text-center relative">
-        <div className="relative z-10">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full mb-6" style={{ background: 'rgba(20, 209, 255, 0.08)', border: '1px solid rgba(166, 230, 255, 0.2)' }}>
-            <span className="w-2 h-2 rounded-full animate-pulse-subtle" style={{ background: 'var(--secondary)' }} />
-            <span className="text-[10px] font-bold tracking-[0.2em] uppercase" style={{ color: 'var(--secondary)' }}>Protocol Active</span>
+      <section className="hero-grid mb-8">
+        <div className="hero-section hero-stage text-center md:text-left relative">
+          <div className="hero-copy relative z-10">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full mb-6" style={{ background: 'rgba(20, 209, 255, 0.08)', border: '1px solid rgba(166, 230, 255, 0.2)' }}>
+              <span className="w-2 h-2 rounded-full animate-pulse-subtle" style={{ background: 'var(--secondary)' }} />
+              <span className="text-[10px] font-bold tracking-[0.2em] uppercase" style={{ color: 'var(--secondary)' }}>Protocol Active</span>
+            </div>
+            <h1 className="font-headline text-4xl md:text-6xl font-bold tracking-tighter mb-5 leading-tight" style={{ color: 'var(--on-surface)' }}>
+              Secure AI Agents<br /><span style={{ color: 'var(--primary)', fontStyle: 'italic' }}>Before They Act</span>
+            </h1>
+            <p className="text-sm md:text-base max-w-xl md:mx-0 mx-auto mb-8 leading-relaxed" style={{ color: 'var(--on-surface-variant)' }}>
+              Every agent action is restricted by a single-use capability token. Cross-service access is blocked. Credentials never leave the vault.
+            </p>
+            <div className="flex flex-wrap justify-center md:justify-start gap-3 mb-8">
+              <button onClick={() => setPage('launch')} className="btn-primary"><M icon="play_arrow" style={{ fontSize: 18 }} /> Launch Execution</button>
+              <button onClick={() => setPage('chain')} className="btn-ghost"><M icon="token" style={{ fontSize: 18 }} /> View Protocol</button>
+            </div>
+
+            <div className="hero-flow-strip">
+              {liveNodes.map((node, index) => {
+                const meta = STEP_META[node.action] || {};
+                const tone = node.status === 'flagged' || node.status === 'revoked'
+                  ? 'var(--error)'
+                  : node.status === 'burned'
+                    ? 'var(--success)'
+                    : node.status === 'active'
+                      ? 'var(--secondary)'
+                      : 'var(--outline)';
+
+                return (
+                  <motion.div
+                    key={node.id}
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.08 * index }}
+                    className="hero-phase-chip"
+                  >
+                    <span className="hero-phase-index" style={{ color: tone }}>{meta.phase || String(index + 1).padStart(2, '0')}</span>
+                    <div>
+                      <p className="hero-phase-title">{meta.label || node.action}</p>
+                      <p className="hero-phase-meta" style={{ color: tone }}>{node.status}</p>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
           </div>
-          <h1 className="font-headline text-4xl md:text-6xl font-bold tracking-tighter mb-5 leading-tight" style={{ color: 'var(--on-surface)' }}>
-            Secure AI Agents<br /><span style={{ color: 'var(--primary)', fontStyle: 'italic' }}>Before They Act</span>
-          </h1>
-          <p className="text-sm md:text-base max-w-lg mx-auto mb-8 leading-relaxed" style={{ color: 'var(--on-surface-variant)' }}>
-            Every agent action is restricted by a single-use capability token. Cross-service access is blocked. Credentials never leave the vault.
-          </p>
-          <div className="flex flex-wrap justify-center gap-3">
-            <button onClick={() => setPage('launch')} className="btn-primary"><M icon="play_arrow" style={{ fontSize: 18 }} /> Launch Execution</button>
-            <button onClick={() => setPage('chain')} className="btn-ghost"><M icon="token" style={{ fontSize: 18 }} /> View Protocol</button>
+        </div>
+
+        <div className="ops-panel card">
+          <div className="flex items-start justify-between gap-3 mb-5">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em]" style={{ color: 'var(--secondary)' }}>Live Control Room</p>
+              <h3 className="font-headline text-2xl font-bold mt-2">Mission status stays visible while the chain moves.</h3>
+            </div>
+            <div className="ops-live-pill">
+              <span className="w-2 h-2 rounded-full animate-pulse-subtle" style={{ background: socketState === 'live' ? 'var(--success)' : 'var(--warning)' }} />
+              {socketState}
+            </div>
+          </div>
+
+          <div className="signal-grid mb-5">
+            <SignalMetric label="Current chain" value={`${progress}%`} hint={currentWorkflow ? 'burned through execution' : 'waiting for a workflow'} tone={progress === 100 ? 'success' : 'primary'} msym="token" />
+            <SignalMetric label="Review pressure" value={reviewQueue.length ? `${reviewQueue.length} queued` : '0 queued'} hint={reviewQueue.length ? 'manual intervention required' : 'no pending intercepts'} tone={reviewQueue.length ? 'danger' : 'success'} msym="shield" />
+            <SignalMetric label="Vault mode" value={health?.auth0 ? String(health.auth0).toUpperCase() : 'ONLINE'} hint={`${credentials.length} secrets remain backend only`} tone="secondary" msym="lock" />
+            <SignalMetric label="Execution state" value={currentWorkflow?.status || 'idle'} hint={currentWorkflow ? currentWorkflow.id.slice(0, 14) : 'select Launch to start'} tone={currentWorkflow?.status === 'paused' ? 'warning' : 'neutral'} msym="hub" />
+          </div>
+
+          <div className="ops-stream mb-5">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-bold uppercase tracking-[0.12em]">Recent transmission</h4>
+              <span className="text-[10px] font-mono" style={{ color: 'var(--outline)' }}>{recentEvents.length ? `${recentEvents.length} live events` : 'awaiting activity'}</span>
+            </div>
+            {recentEvents.length === 0 ? (
+              <p className="text-sm" style={{ color: 'var(--on-surface-variant)' }}>Launch a workflow and this panel will fill with token lifecycle events in real time.</p>
+            ) : (
+              <div className="space-y-2">
+                {recentEvents.map((entry) => (
+                  <StreamRow key={`${entry.id}-${entry.timestamp}`} entry={entry} />
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <button onClick={() => currentWorkflow ? goToChain(currentWorkflow.id) : setPage('launch')} className="btn-primary">
+              <M icon="north_east" style={{ fontSize: 16 }} /> {currentWorkflow ? 'Open Active Chain' : 'Launch First Chain'}
+            </button>
+            <button onClick={() => setPage('security')} className="btn-ghost">
+              <M icon="policy" style={{ fontSize: 16 }} /> Review Security
+            </button>
+            {currentWorkflow && (
+              <button onClick={onKill} disabled={busyAction === 'kill'} className="btn-danger">
+                <M icon="local_fire_department" style={{ fontSize: 16 }} /> {busyAction === 'kill' ? 'Halting...' : 'Kill Switch'}
+              </button>
+            )}
           </div>
         </div>
       </section>
@@ -321,11 +537,16 @@ function DashboardPage({ workflows, reviewQueue, credentials, health, setPage, g
         {/* Kill Switch Card */}
         <div className="card-high p-8 relative" style={{ borderColor: 'rgba(255, 180, 171, 0.2)' }}>
           <div className="absolute top-4 right-4">
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-[0.15em]" style={{ background: 'rgba(255, 180, 171, 0.1)', color: 'var(--error)' }}>Active</span>
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-[0.15em]" style={{ background: 'rgba(255, 180, 171, 0.1)', color: 'var(--error)' }}>
+              {currentWorkflow ? 'Armed' : 'Standby'}
+            </span>
           </div>
           <M icon="local_fire_department" style={{ color: 'var(--error)', fontSize: 32 }} className="mb-4" />
           <h3 className="text-lg font-bold mb-2 font-headline">Kill Switch</h3>
-          <p className="text-sm" style={{ color: 'var(--on-surface-variant)' }}>Instantly sever all AI connections with a single hardware-backed command.</p>
+          <p className="text-sm mb-5" style={{ color: 'var(--on-surface-variant)' }}>Instantly sever all AI connections with a single hardware-backed command.</p>
+          <button onClick={currentWorkflow ? onKill : () => setPage('launch')} disabled={currentWorkflow && busyAction === 'kill'} className="btn-danger">
+            <M icon="local_fire_department" style={{ fontSize: 16 }} /> {currentWorkflow ? (busyAction === 'kill' ? 'Halting...' : 'Abort Current Chain') : 'Queue a Workflow'}
+          </button>
         </div>
 
         {/* Active workflows */}
@@ -395,8 +616,10 @@ function DashboardPage({ workflows, reviewQueue, credentials, health, setPage, g
 function ChainPage({ chainNodes, currentWorkflow, workflows, selectedWorkflowId, setSelectedWorkflowId, audit, onKill, busyAction }) {
   const burnedCount = chainNodes.filter(n => n.status === 'burned').length;
   const flaggedCount = chainNodes.filter(n => n.status === 'flagged').length;
+  const liveCount = chainNodes.filter((n) => n.status === 'active' || n.status === 'pending').length;
   const total = chainNodes.length || 1;
   const progress = Math.round((burnedCount / total) * 100);
+  const recentEvents = audit.slice(-4).reverse();
 
   // Build CLI log lines from chain nodes + audit
   const cliLines = [];
@@ -466,6 +689,13 @@ function ChainPage({ chainNodes, currentWorkflow, workflows, selectedWorkflowId,
         </div>
       </div>
 
+      <div className="signal-grid mb-5">
+        <SignalMetric label="Burned tokens" value={String(burnedCount).padStart(2, '0')} hint="single-use steps already completed" tone="success" msym="local_fire_department" />
+        <SignalMetric label="Live steps" value={String(liveCount).padStart(2, '0')} hint="pending or executing right now" tone={liveCount ? 'primary' : 'neutral'} msym="bolt" />
+        <SignalMetric label="Blocked steps" value={String(flaggedCount).padStart(2, '0')} hint={flaggedCount ? 'workflow diverted to review' : 'no violations in this chain'} tone={flaggedCount ? 'danger' : 'success'} msym="shield" />
+        <SignalMetric label="Recent events" value={String(recentEvents.length).padStart(2, '0')} hint={recentEvents[0] ? recentEvents[0].event_type.toLowerCase() : 'waiting for audit activity'} tone="secondary" msym="history" />
+      </div>
+
       <div className="grid gap-5 md:grid-cols-2 mb-5">
         {/* Vertical Token Chain */}
         <div className="card p-6">
@@ -532,6 +762,21 @@ function ChainPage({ chainNodes, currentWorkflow, workflows, selectedWorkflowId,
               <InfoCard label="Step" value={`Step ${currentWorkflow.current_step}`} msym="skip_next" />
             </div>
           )}
+          <div className="card p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-bold uppercase tracking-[0.12em]">Recent Transmissions</h4>
+              <span className="text-[10px] font-mono" style={{ color: 'var(--outline)' }}>{recentEvents.length ? `${recentEvents.length} events` : 'idle'}</span>
+            </div>
+            {recentEvents.length === 0 ? (
+              <p className="text-sm" style={{ color: 'var(--on-surface-variant)' }}>Audit telemetry will appear here once this chain starts moving.</p>
+            ) : (
+              <div className="space-y-2">
+                {recentEvents.map((entry) => (
+                  <StreamRow key={`${entry.id}-${entry.timestamp}`} entry={entry} />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </motion.div>
@@ -803,6 +1048,52 @@ function LaunchPage({ tasks, selectedTask, setSelectedTask, onStart, busyAction 
 /* ═══════════════════════════════════════════════════════════
    Shared Components
    ═══════════════════════════════════════════════════════════ */
+function SignalMetric({ label, value, hint, tone = 'primary', msym = 'monitoring' }) {
+  const toneMap = {
+    primary: 'var(--primary)',
+    secondary: 'var(--secondary)',
+    success: 'var(--success)',
+    warning: 'var(--warning)',
+    danger: 'var(--error)',
+    neutral: 'var(--outline)',
+  };
+  const color = toneMap[tone] || toneMap.primary;
+
+  return (
+    <div className="signal-metric">
+      <div className="flex items-center justify-between mb-3">
+        <span className="signal-metric-label">{label}</span>
+        <span className="signal-metric-icon" style={{ color }}>
+          <M icon={msym} style={{ fontSize: 15 }} />
+        </span>
+      </div>
+      <p className="signal-metric-value">{value}</p>
+      <p className="signal-metric-hint">{hint}</p>
+      <div className="signal-metric-bar">
+        <span style={{ background: color }} />
+      </div>
+    </div>
+  );
+}
+
+function StreamRow({ entry }) {
+  return (
+    <div className="stream-row">
+      <div className="stream-row-icon">
+        <EventIcon type={entry.event_type} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="stream-row-label" style={{ color: evtColor(entry.event_type) }}>{entry.event_type}</p>
+        <p className="stream-row-copy">{describeAudit(entry)}</p>
+      </div>
+      <div className="text-right flex-shrink-0">
+        <p className="stream-row-time">{fmtTime(entry.timestamp)}</p>
+        <p className="stream-row-actor">{entry.actor}</p>
+      </div>
+    </div>
+  );
+}
+
 function MetricCard({ label, value, msym, color, sub, delay }) {
   const colorMap = { primary: 'var(--primary)', secondary: 'var(--secondary)', error: 'var(--error)', success: 'var(--success)' };
   const c = colorMap[color] || 'var(--primary)';
