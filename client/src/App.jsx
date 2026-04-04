@@ -281,14 +281,16 @@ export default function App() {
       </AnimatePresence>
 
       <div className="main-wrap">
-        <LiveStatusRail
-          signals={statusSignals}
-          tickerItems={tickerItems}
-          pulseIndex={pulseIndex}
-          onNavigate={setPage}
-          collapsed={statusRailCollapsed}
-          onToggle={() => setStatusRailCollapsed((value) => !value)}
-        />
+        {page === 'landing' && (
+          <LiveStatusRail
+            signals={statusSignals}
+            tickerItems={tickerItems}
+            pulseIndex={pulseIndex}
+            onNavigate={setPage}
+            collapsed={statusRailCollapsed}
+            onToggle={() => setStatusRailCollapsed((value) => !value)}
+          />
+        )}
 
         <AnimatePresence mode="wait">
           <motion.div
