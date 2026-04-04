@@ -115,6 +115,9 @@ export default function App() {
   const refreshTimeoutRef = useRef(null);
   const selectedWorkflowIdRef = useRef(selectedWorkflowId);
   const [pulseIndex, setPulseIndex] = useState(0);
+  const [statusRailCollapsed, setStatusRailCollapsed] = useState(() => (
+    typeof window !== 'undefined' ? window.innerWidth < 1100 : false
+  ));
 
   const workflows = overview?.workflows || [];
   const currentWorkflow = workflows.find((w) => w.id === selectedWorkflowId) || workflows[0] || null;
@@ -234,7 +237,7 @@ export default function App() {
   ];
 
   return (
-    <div className="min-h-screen">
+    <div className={`app-shell min-h-screen ${statusRailCollapsed ? 'rail-collapsed' : 'rail-expanded'}`}>
       <ParticleCanvas />
       {/* ─── Floating Top Navbar ─── */}
       <nav className="top-navbar">
@@ -277,14 +280,16 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <LiveStatusRail
-        signals={statusSignals}
-        tickerItems={tickerItems}
-        pulseIndex={pulseIndex}
-        onNavigate={setPage}
-      />
-
       <div className="main-wrap">
+        <LiveStatusRail
+          signals={statusSignals}
+          tickerItems={tickerItems}
+          pulseIndex={pulseIndex}
+          onNavigate={setPage}
+          collapsed={statusRailCollapsed}
+          onToggle={() => setStatusRailCollapsed((value) => !value)}
+        />
+
         <AnimatePresence mode="wait">
           <motion.div
             key={page}
@@ -327,7 +332,7 @@ export default function App() {
   );
 }
 
-function LiveStatusRail({ signals, tickerItems, pulseIndex, onNavigate }) {
+function LiveStatusRail({ signals, tickerItems, pulseIndex, onNavigate, collapsed, onToggle }) {
   const toneMap = {
     primary: ['var(--primary)', 'rgba(196, 192, 255, 0.14)'],
     secondary: ['var(--secondary)', 'rgba(166, 230, 255, 0.12)'],
@@ -337,41 +342,87 @@ function LiveStatusRail({ signals, tickerItems, pulseIndex, onNavigate }) {
     neutral: ['var(--outline)', 'rgba(145, 143, 161, 0.1)'],
   };
 
+  const activeAlert = signals.find((signal) => signal.tone === 'danger');
+  const summary = activeAlert
+    ? activeAlert.value
+    : signals[0]?.value || 'Mission telemetry ready';
+
   return (
     <div className="status-rail-wrap">
       <div className="status-rail">
-        <div className="status-rail-grid">
-          {signals.map((signal, index) => {
-            const [accent, tint] = toneMap[signal.tone] || toneMap.neutral;
-            const isActive = index === pulseIndex % signals.length;
-            return (
-              <motion.button
-                key={signal.label}
-                type="button"
-                whileHover={{ y: -2 }}
-                whileTap={{ scale: 0.99 }}
-                onClick={() => signal.page && onNavigate(signal.page)}
-                className={`status-card ${isActive ? 'is-active' : ''}`}
-                style={{ '--signal-accent': accent, '--signal-tint': tint }}
-              >
-                <div className="status-card-top">
-                  <span className="status-card-label">{signal.label}</span>
-                  <span className="status-card-icon"><M icon={signal.msym} style={{ fontSize: 16, color: accent }} /></span>
-                </div>
-                <strong className="status-card-value">{signal.value}</strong>
-                <span className="status-card-meta">{signal.meta}</span>
-              </motion.button>
-            );
-          })}
+        <div className="status-rail-header">
+          <div>
+            <p className="status-rail-kicker">Live Mission Status</p>
+            <p className="status-rail-summary">{summary}</p>
+          </div>
+          <button
+            type="button"
+            className="status-rail-toggle"
+            onClick={onToggle}
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? 'Expand live mission status' : 'Collapse live mission status'}
+          >
+            <span>{collapsed ? 'Expand' : 'Collapse'}</span>
+            <M icon={collapsed ? 'expand_more' : 'expand_less'} style={{ fontSize: 18 }} />
+          </button>
         </div>
 
-        <div className="status-ticker" aria-hidden="true">
-          <div className="ticker-track">
-            {[...tickerItems, ...tickerItems].map((item, index) => (
-              <span key={`${item}-${index}`} className="ticker-pill">{item}</span>
+        <AnimatePresence initial={false}>
+          {!collapsed && (
+            <motion.div
+              key="status-rail-body"
+              className="status-rail-body"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <div className="status-rail-grid">
+                {signals.map((signal, index) => {
+                  const [accent, tint] = toneMap[signal.tone] || toneMap.neutral;
+                  const isActive = index === pulseIndex % signals.length;
+                  return (
+                    <motion.button
+                      key={signal.label}
+                      type="button"
+                      whileHover={{ y: -2 }}
+                      whileTap={{ scale: 0.99 }}
+                      onClick={() => signal.page && onNavigate(signal.page)}
+                      className={`status-card ${isActive ? 'is-active' : ''}`}
+                      style={{ '--signal-accent': accent, '--signal-tint': tint }}
+                    >
+                      <div className="status-card-top">
+                        <span className="status-card-label">{signal.label}</span>
+                        <span className="status-card-icon"><M icon={signal.msym} style={{ fontSize: 16, color: accent }} /></span>
+                      </div>
+                      <strong className="status-card-value">{signal.value}</strong>
+                      <span className="status-card-meta">{signal.meta}</span>
+                    </motion.button>
+                  );
+                })}
+              </div>
+
+              <div className="status-ticker" aria-hidden="true">
+                <div className="ticker-track">
+                  {[...tickerItems, ...tickerItems].map((item, index) => (
+                    <span key={`${item}-${index}`} className="ticker-pill">{item}</span>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {collapsed && (
+          <div className="status-rail-collapsed-strip" aria-hidden="true">
+            {signals.slice(0, 3).map((signal) => (
+              <span key={signal.label} className="status-collapsed-pill">
+                <M icon={signal.msym} style={{ fontSize: 13 }} />
+                {signal.label}
+              </span>
             ))}
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
