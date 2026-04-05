@@ -15,6 +15,8 @@
  * @param {object} params.workflow — workflow record
  * @returns {{ assertions: object[], passed: number, failed: number, total: number }}
  */
+export const INVARIANT_COUNT = 14;
+
 export function runAssertions({ scenario, chain, auditLog, workflow }) {
   const assertions = [
     assertExpectedWorkflowOutcome(workflow, scenario),

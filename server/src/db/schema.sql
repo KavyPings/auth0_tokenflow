@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS workflows (
   status TEXT NOT NULL DEFAULT 'pending',
   applicant_data TEXT DEFAULT '{}',
   workflow_type TEXT NOT NULL DEFAULT 'mission',
+  hidden_from_chain INTEGER NOT NULL DEFAULT 0,
   current_step INTEGER DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
@@ -87,6 +88,8 @@ CREATE TABLE IF NOT EXISTS uploaded_workflows (
   description TEXT DEFAULT '',
   definition TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'validated',
+  validation_errors TEXT DEFAULT '[]',
+  last_error TEXT DEFAULT '',
   uploaded_at TEXT DEFAULT (datetime('now')),
   last_run_at TEXT
 );

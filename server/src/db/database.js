@@ -36,7 +36,29 @@ export function getDb() {
     db.exec("ALTER TABLE workflows ADD COLUMN workflow_type TEXT NOT NULL DEFAULT 'mission'");
   }
 
+  try {
+    db.prepare('SELECT hidden_from_chain FROM workflows LIMIT 1').get();
+  } catch {
+    db.exec("ALTER TABLE workflows ADD COLUMN hidden_from_chain INTEGER NOT NULL DEFAULT 0");
+  }
+
   db.exec("UPDATE workflows SET workflow_type = 'mission' WHERE workflow_type IS NULL OR workflow_type = ''");
+  db.exec('UPDATE workflows SET hidden_from_chain = 0 WHERE hidden_from_chain IS NULL');
+
+  try {
+    db.prepare('SELECT validation_errors FROM uploaded_workflows LIMIT 1').get();
+  } catch {
+    db.exec("ALTER TABLE uploaded_workflows ADD COLUMN validation_errors TEXT DEFAULT '[]'");
+  }
+
+  try {
+    db.prepare('SELECT last_error FROM uploaded_workflows LIMIT 1').get();
+  } catch {
+    db.exec("ALTER TABLE uploaded_workflows ADD COLUMN last_error TEXT DEFAULT ''");
+  }
+
+  db.exec("UPDATE uploaded_workflows SET validation_errors = '[]' WHERE validation_errors IS NULL OR validation_errors = ''");
+  db.exec("UPDATE uploaded_workflows SET last_error = '' WHERE last_error IS NULL");
 
   // Seed vault credentials if empty
   const count = db.prepare('SELECT COUNT(*) as count FROM vault_credentials').get();

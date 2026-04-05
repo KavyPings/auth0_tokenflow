@@ -234,6 +234,61 @@ class TokenEngine {
     });
   }
 
+  clearAuditLog(options = {}) {
+    const db = getDb();
+    const { workflowTypes = null } = options;
+
+    if (workflowTypes && workflowTypes.length > 0) {
+      const workflowPlaceholders = workflowTypes.map(() => '?').join(', ');
+      const workflowIds = db.prepare(`
+        SELECT id FROM workflows
+        WHERE COALESCE(workflow_type, 'mission') IN (${workflowPlaceholders})
+      `).all(...workflowTypes).map((workflow) => workflow.id);
+
+      if (workflowIds.length === 0) {
+        return { count: 0, workflowIds: [] };
+      }
+
+      const auditPlaceholders = workflowIds.map(() => '?').join(', ');
+      const count = db.prepare(`
+        SELECT COUNT(*) AS count FROM audit_log
+        WHERE workflow_id IN (${auditPlaceholders})
+      `).get(...workflowIds).count;
+
+      db.prepare(`
+        DELETE FROM audit_log
+        WHERE workflow_id IN (${auditPlaceholders})
+      `).run(...workflowIds);
+
+      broadcast({
+        type: 'AUDIT_EVENT',
+        payload: {
+          event_type: 'CLEARED',
+          workflow_ids: workflowIds,
+          timestamp: new Date().toISOString(),
+          actor: 'human',
+        },
+      });
+
+      return { count, workflowIds };
+    }
+
+    const count = db.prepare('SELECT COUNT(*) AS count FROM audit_log').get().count;
+    db.prepare('DELETE FROM audit_log').run();
+
+    broadcast({
+      type: 'AUDIT_EVENT',
+      payload: {
+        event_type: 'CLEARED',
+        workflow_ids: [],
+        timestamp: new Date().toISOString(),
+        actor: 'human',
+      },
+    });
+
+    return { count, workflowIds: [] };
+  }
+
   // ─── Internal: write immutable audit log entry ───────────
   _auditLog(tokenId, workflowId, eventType, details = {}, actor = 'system') {
     const db = getDb();

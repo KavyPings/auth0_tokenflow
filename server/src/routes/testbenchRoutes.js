@@ -4,6 +4,7 @@
 
 import { Router } from 'express';
 import { testbenchEngine } from '../engine/testbenchEngine.js';
+import { INVARIANT_COUNT } from '../engine/testbenchAssertions.js';
 
 const router = Router();
 
@@ -38,7 +39,15 @@ router.post('/run-suite', async (req, res) => {
 // List available test scenarios
 router.get('/scenarios', (req, res) => {
   const scenarios = testbenchEngine.getScenarios();
-  res.json({ success: true, scenarios, count: scenarios.length });
+  res.json({
+    success: true,
+    scenarios,
+    count: scenarios.length,
+    meta: {
+      scenarioCount: scenarios.length,
+      invariantCount: INVARIANT_COUNT,
+    },
+  });
 });
 
 // ─── GET /api/testbench/results ──────────────────────────

@@ -69,6 +69,15 @@ router.get('/audit', (req, res) => {
   res.json({ success: true, audit_log: log, count: log.length });
 });
 
+router.post('/audit/clear', (req, res) => {
+  try {
+    const result = tokenEngine.clearAuditLog({ workflowTypes: ['mission'] });
+    res.json({ success: true, ...result });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.get('/chain/:workflowId', (req, res) => {
   const chain = tokenEngine.getTokenChain(req.params.workflowId);
   res.json({ success: true, chain, count: chain.length });

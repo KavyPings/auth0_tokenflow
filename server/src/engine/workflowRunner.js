@@ -479,27 +479,31 @@ class WorkflowRunner {
 
   clearWorkflows(options = {}) {
     const db = getDb();
-    const { workflowTypes = ['mission'] } = options;
-    const placeholders = workflowTypes.map(() => '?').join(', ');
+    const { workflowTypes = ['mission'], statuses = ['completed', 'aborted'] } = options;
+    const workflowPlaceholders = workflowTypes.map(() => '?').join(', ');
+    const statusPlaceholders = statuses.map(() => '?').join(', ');
     const workflows = db.prepare(`
       SELECT id FROM workflows
-      WHERE COALESCE(workflow_type, 'mission') IN (${placeholders})
-    `).all(...workflowTypes);
+      WHERE COALESCE(workflow_type, 'mission') IN (${workflowPlaceholders})
+        AND status IN (${statusPlaceholders})
+        AND COALESCE(hidden_from_chain, 0) = 0
+    `).all(...workflowTypes, ...statuses);
 
     if (workflows.length === 0) {
       return { count: 0, workflowIds: [] };
     }
 
     const workflowIds = workflows.map((workflow) => workflow.id);
-    const deleteAudit = db.prepare('DELETE FROM audit_log WHERE workflow_id = ?');
-    const deleteTokens = db.prepare('DELETE FROM tokens WHERE workflow_id = ?');
-    const deleteWorkflow = db.prepare('DELETE FROM workflows WHERE id = ?');
+    const hideWorkflow = db.prepare(`
+      UPDATE workflows
+      SET hidden_from_chain = 1, updated_at = ?
+      WHERE id = ?
+    `);
+    const now = new Date().toISOString();
 
     db.transaction((ids) => {
       for (const workflowId of ids) {
-        deleteAudit.run(workflowId);
-        deleteTokens.run(workflowId);
-        deleteWorkflow.run(workflowId);
+        hideWorkflow.run(now, workflowId);
       }
     })(workflowIds);
 

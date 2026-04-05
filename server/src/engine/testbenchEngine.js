@@ -15,6 +15,7 @@ import { workflowRunner } from './workflowRunner.js';
 import { tokenEngine } from './tokenEngine.js';
 import { runAssertions } from './testbenchAssertions.js';
 import { ALL_TASKS } from '../data/agentTasks.js';
+import { validateWorkflow } from './workflowSchema.js';
 
 // Maximum time to wait for a workflow to settle (ms)
 const RUN_TIMEOUT = 30000;
@@ -41,6 +42,32 @@ class TestbenchEngine {
     `).run(runId, scenarioId, scenario.name, new Date().toISOString());
 
     try {
+      if (scenario.source === 'uploaded' && scenario.runnable === false) {
+        const durationMs = Date.now() - startTime;
+        const summary = {
+          scenarioId,
+          scenarioName: scenario.name,
+          category: scenario.category,
+          validationErrors: scenario.validationErrors || [],
+          error: scenario.lastError || 'Uploaded workflow is invalid and cannot be executed.',
+          durationMs,
+        };
+
+        db.prepare(`
+          UPDATE test_runs SET status = 'error', summary = ?, completed_at = ?, duration_ms = ? WHERE id = ?
+        `).run(JSON.stringify(summary), new Date().toISOString(), durationMs, runId);
+
+        return {
+          runId,
+          status: 'error',
+          scenarioId,
+          scenarioName: scenario.name,
+          error: summary.error,
+          validationErrors: summary.validationErrors,
+          durationMs,
+        };
+      }
+
       // Start workflow in deterministic mode (fast, no random delays)
       const result = await workflowRunner.startWorkflow(scenario, {
         deterministic: true,
@@ -115,8 +142,9 @@ class TestbenchEngine {
     const suiteId = `suite_${uuidv4().slice(0, 8)}`;
     const startTime = Date.now();
     const results = [];
+    const scenarios = this.getScenarios();
 
-    for (const scenario of ALL_TASKS) {
+    for (const scenario of scenarios) {
       const result = await this.runScenario(scenario.id);
       results.push(result);
     }
@@ -130,7 +158,7 @@ class TestbenchEngine {
       suiteId,
       status: failed === 0 && errors === 0 ? 'passed' : 'failed',
       results,
-      summary: { passed, failed, errors, total: results.length, durationMs },
+      summary: { passed, failed, errors, total: scenarios.length, durationMs },
     };
   }
 
@@ -220,15 +248,37 @@ class TestbenchEngine {
         definition = {};
       }
 
+      let validationErrors = [];
+      try {
+        validationErrors = JSON.parse(row.validation_errors || '[]');
+      } catch {
+        validationErrors = [];
+      }
+
+      if (Object.keys(definition).length > 0) {
+        const validation = validateWorkflow(definition);
+        validationErrors = validation.valid ? [] : validation.errors;
+      } else if (validationErrors.length === 0) {
+        validationErrors = ['Stored workflow definition is unreadable.'];
+      }
+
+      const runnable = validationErrors.length === 0;
+
       return {
         id: row.id,
         name: definition.name || row.name,
         description: definition.description || row.description || 'Uploaded custom workflow',
         category: 'uploaded',
         malicious: false,
-        incident_mapping: 'Custom uploaded workflow validated against the same TokenFlow security invariants.',
-        steps: definition.steps || [],
+        incident_mapping: runnable
+          ? 'Custom uploaded workflow validated against the same TokenFlow security invariants.'
+          : 'Uploaded workflow is stored for inspection, but currently fails validation against TokenFlow policy.',
+        steps: Array.isArray(definition.steps) ? definition.steps : [],
         source: 'uploaded',
+        uploadStatus: row.status,
+        validationErrors,
+        lastError: row.last_error || '',
+        runnable,
       };
     });
   }

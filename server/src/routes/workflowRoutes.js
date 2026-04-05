@@ -69,7 +69,7 @@ router.post('/:id/kill', async (req, res) => {
 
 router.post('/clear', (req, res) => {
   try {
-    const result = workflowRunner.clearWorkflows({ workflowTypes: ['mission'] });
+    const result = workflowRunner.clearWorkflows({ workflowTypes: ['mission'], statuses: ['completed', 'aborted'] });
     res.json({ success: true, ...result });
   } catch (error) {
     res.status(500).json({ error: error.message });

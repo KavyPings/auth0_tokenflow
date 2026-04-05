@@ -120,7 +120,9 @@ export default function App() {
   ));
 
   const workflows = overview?.workflows || [];
+  const chainWorkflows = workflows.filter((workflow) => !workflow.hidden_from_chain);
   const currentWorkflow = workflows.find((w) => w.id === selectedWorkflowId) || workflows[0] || null;
+  const currentChainWorkflow = chainWorkflows.find((workflow) => workflow.id === selectedWorkflowId) || chainWorkflows[0] || null;
   const reviewQueue = overview?.reviewQueue || [];
   const currentReview = reviewQueue.find((i) => i.workflowId === selectedWorkflowId) || reviewQueue[0] || null;
   const credentials = overview?.credentials || [];
@@ -131,8 +133,9 @@ export default function App() {
       api('/api/dashboard/overview'), api('/api/health'), api('/api/workflows/tasks/list'),
     ]);
     setOverview(o); setHealth(h); setTasks(t.tasks || []);
-    if (preferredId) { setSelectedWorkflowId(preferredId); return; }
+    if (preferredId) { setSelectedWorkflowId(preferredId); return o; }
     setSelectedWorkflowId((c) => (c && o.workflows.some((w) => w.id === c)) ? c : o.workflows[0]?.id || null);
+    return o;
   }, []);
 
   const loadChain = useCallback(async (wfId) => {
@@ -144,6 +147,24 @@ export default function App() {
   useEffect(() => { loadDashboard().catch((e) => setError(e.message)); }, [loadDashboard]);
   useEffect(() => { loadChain(selectedWorkflowId).catch((e) => setError(e.message)); }, [selectedWorkflowId, loadChain]);
   useEffect(() => { selectedWorkflowIdRef.current = selectedWorkflowId; }, [selectedWorkflowId]);
+  useEffect(() => {
+    if (page !== 'chain') {
+      return;
+    }
+
+    if (chainWorkflows.length === 0) {
+      if (selectedWorkflowId) {
+        setSelectedWorkflowId(null);
+      }
+      return;
+    }
+
+    if (selectedWorkflowId && chainWorkflows.some((workflow) => workflow.id === selectedWorkflowId)) {
+      return;
+    }
+
+    setSelectedWorkflowId(chainWorkflows[0].id);
+  }, [page, selectedWorkflowId, chainWorkflows]);
   useEffect(() => {
     const interval = setInterval(() => setPulseIndex((value) => value + 1), 3200);
     return () => clearInterval(interval);
@@ -193,11 +214,29 @@ export default function App() {
   function handleClearWorkflows() {
     withBusy('clear-workflows', async () => {
       const result = await api('/api/workflows/clear', { method: 'POST' });
-      setSelectedWorkflowId(null);
-      setChain([]);
-      setAudit([]);
-      setNotice(result.count ? `Cleared ${result.count} tracked workflow${result.count === 1 ? '' : 's'} from Token Chain.` : 'No tracked workflows to clear.');
-      await loadDashboard();
+      const updatedOverview = await loadDashboard();
+      const visibleWorkflows = (updatedOverview?.workflows || []).filter((workflow) => !workflow.hidden_from_chain);
+      const nextVisibleWorkflowId = selectedWorkflowIdRef.current && visibleWorkflows.some((workflow) => workflow.id === selectedWorkflowIdRef.current)
+        ? selectedWorkflowIdRef.current
+        : (visibleWorkflows.find((workflow) => workflow.status === 'running' || workflow.status === 'paused')?.id || visibleWorkflows[0]?.id || null);
+
+      setNotice(result.count ? `Cleared ${result.count} settled workflow${result.count === 1 ? '' : 's'} from Token Chain.` : 'No settled workflows to clear.');
+
+      if (nextVisibleWorkflowId) {
+        setSelectedWorkflowId(nextVisibleWorkflowId);
+        await loadChain(nextVisibleWorkflowId);
+      } else {
+        setSelectedWorkflowId(null);
+        await loadChain(null);
+      }
+    });
+  }
+  function handleClearAuditLog() {
+    withBusy('clear-audit', async () => {
+      const result = await api('/api/tokens/audit/clear', { method: 'POST' });
+      await loadDashboard(selectedWorkflowIdRef.current);
+      await loadChain(selectedWorkflowIdRef.current);
+      setNotice(result.count ? `Cleared ${result.count} security audit event${result.count === 1 ? '' : 's'}.` : 'Security audit log is already empty.');
     });
   }
   async function handleUploadedWorkflowRun(uploadedWorkflowId) {
@@ -208,6 +247,7 @@ export default function App() {
   function handleRefresh() { withBusy('refresh', async () => { await loadDashboard(); await loadChain(selectedWorkflowId); setNotice('Dashboard refreshed.'); }); }
 
   const alertCount = reviewQueue.length;
+  const showRefreshButton = socketState === 'offline' || socketState === 'degraded';
 
   function goToChain(wfId) {
     if (wfId) setSelectedWorkflowId(wfId);
@@ -278,9 +318,11 @@ export default function App() {
           ))}
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={handleRefresh} disabled={busyAction === 'refresh'} className="btn-ghost" style={{ padding: '0.4rem 0.8rem', fontSize: '0.65rem' }}>
-            <RefreshCcw className="h-3 w-3" /> Sync
-          </button>
+          {showRefreshButton && (
+            <button onClick={handleRefresh} disabled={busyAction === 'refresh'} className="btn-ghost" style={{ padding: '0.4rem 0.8rem', fontSize: '0.65rem' }}>
+              <RefreshCcw className="h-3 w-3" /> Refresh
+            </button>
+          )}
           <div className="flex items-center gap-1.5">
             <span className="inline-block w-2 h-2 rounded-full" style={{
               background: socketState === 'live' ? 'var(--success)' : 'var(--error)',
@@ -343,7 +385,7 @@ export default function App() {
                 setPage={setPage}
               />
             )}
-            {page === 'chain' && <ChainPage key="c" workflows={workflows} chainNodes={chainNodes} currentWorkflow={currentWorkflow} selectedWorkflowId={selectedWorkflowId} setSelectedWorkflowId={setSelectedWorkflowId} audit={audit} onKill={() => handleKill(currentWorkflow?.id)} onClearWorkflows={handleClearWorkflows} busyAction={busyAction} />}
+            {page === 'chain' && <ChainPage key="c" workflows={chainWorkflows} chainNodes={chainNodes} currentWorkflow={currentChainWorkflow} selectedWorkflowId={selectedWorkflowId} setSelectedWorkflowId={setSelectedWorkflowId} audit={audit} onKill={() => handleKill(currentChainWorkflow?.id)} onClearWorkflows={handleClearWorkflows} busyAction={busyAction} />}
             {page === 'audit' && <AuditPage key="a" audit={audit} />}
             {page === 'security' && (
               <SecurityPage
@@ -357,6 +399,7 @@ export default function App() {
                 onResume={handleResume}
                 onRevoke={handleRevoke}
                 onOpenChain={goToChain}
+                onClearAudit={handleClearAuditLog}
                 busyAction={busyAction}
               />
             )}
@@ -942,6 +985,7 @@ function SecurityPage({
   onResume,
   onRevoke,
   onOpenChain,
+  onClearAudit,
   busyAction,
 }) {
   const hasWorkflows = workflows && workflows.length > 0;
@@ -982,6 +1026,20 @@ function SecurityPage({
             <h3 className="text-lg font-bold font-headline">Security Audit Log</h3>
             <p className="text-sm" style={{ color: 'var(--on-surface-variant)' }}>Tracks all workflow executions, security violations, flagged tokens, and kill switch activations across your environment.</p>
           </div>
+          <button
+            onClick={onClearAudit}
+            disabled={busyAction === 'clear-audit'}
+            className="btn-ghost"
+            style={{
+              padding: '0.55rem 0.9rem',
+              color: 'var(--error)',
+              borderColor: 'rgba(255,180,171,0.2)',
+              background: 'rgba(255,180,171,0.06)',
+            }}
+          >
+            <M icon="delete_sweep" style={{ fontSize: 16 }} />
+            {busyAction === 'clear-audit' ? 'Clearing…' : 'Clear Audit Log'}
+          </button>
           {reviewQueue.length > 0 && (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold" style={{ background: 'rgba(255,80,80,0.1)', color: 'var(--error)', border: '1px solid rgba(255,180,171,0.2)' }}>
               <span className="w-2 h-2 rounded-full animate-pulse-subtle" style={{ background: 'var(--error)' }} />
@@ -1417,6 +1475,26 @@ function LaunchPage({ tasks, selectedTask, setSelectedTask, onStart, busyAction 
     paused: { label: 'Expected: Pause', color: 'var(--warning)', bg: 'rgba(251,191,36,0.12)' },
     aborted: { label: 'Expected: Abort', color: 'var(--error)', bg: 'rgba(255,180,171,0.12)' },
   };
+  const scenarioTone = {
+    safe: {
+      label: 'Safe',
+      icon: 'verified_user',
+      bg: 'rgba(52,211,153,0.1)',
+      color: 'var(--success)',
+    },
+    attack: {
+      label: 'Compromised',
+      icon: 'gpp_bad',
+      bg: 'rgba(255,180,171,0.1)',
+      color: 'var(--error)',
+    },
+    control: {
+      label: 'Control',
+      icon: 'admin_panel_settings',
+      bg: 'rgba(251,191,36,0.12)',
+      color: 'var(--warning)',
+    },
+  };
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <div className="max-w-2xl mx-auto">
@@ -1429,7 +1507,9 @@ function LaunchPage({ tasks, selectedTask, setSelectedTask, onStart, busyAction 
         </div>
 
         <div className="space-y-3 mb-6">
-          {tasks.map((t) => (
+          {tasks.map((t) => {
+            const tone = scenarioTone[t.category] || scenarioTone.safe;
+            return (
             <button key={t.id} onClick={() => setSelectedTask(t.id)}
               className="w-full text-left p-5 rounded-[2rem] transition-all"
               style={{
@@ -1438,16 +1518,16 @@ function LaunchPage({ tasks, selectedTask, setSelectedTask, onStart, busyAction 
                 boxShadow: t.id === selectedTask ? '0 0 20px rgba(196,192,255,0.08)' : 'none',
               }}>
               <div className="flex items-start gap-4">
-                <div className="p-2.5 rounded-xl flex-shrink-0" style={{ background: t.malicious ? 'rgba(255,180,171,0.1)' : 'rgba(52,211,153,0.1)' }}>
-                  <M icon={t.malicious ? 'gpp_bad' : 'verified_user'} style={{ fontSize: 20, color: t.malicious ? 'var(--error)' : 'var(--success)' }} />
+                <div className="p-2.5 rounded-xl flex-shrink-0" style={{ background: tone.bg }}>
+                  <M icon={tone.icon} style={{ fontSize: 20, color: tone.color }} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <h4 className="text-sm font-bold font-headline">{t.name}</h4>
                     <span className="text-[8px] font-bold uppercase tracking-[0.15em] px-2 py-0.5 rounded" style={{
-                      background: t.malicious ? 'rgba(255,180,171,0.1)' : 'rgba(52,211,153,0.1)',
-                      color: t.malicious ? 'var(--error)' : 'var(--success)',
-                    }}>{t.malicious ? 'Compromised' : 'Normal'}</span>
+                      background: tone.bg,
+                      color: tone.color,
+                    }}>{tone.label}</span>
                     {t.expected_status && (
                       <span
                         className="text-[8px] font-bold uppercase tracking-[0.15em] px-2 py-0.5 rounded"
@@ -1476,7 +1556,8 @@ function LaunchPage({ tasks, selectedTask, setSelectedTask, onStart, busyAction 
                 </div>
               </div>
             </button>
-          ))}
+            );
+          })}
         </div>
 
         <button onClick={onStart} disabled={busyAction === 'start'} className="btn-primary w-full py-4 text-sm" style={{ boxShadow: '0 0 30px rgba(196,192,255,0.3)' }}>
