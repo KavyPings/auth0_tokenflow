@@ -21,22 +21,33 @@ const CLIENT_DIST_PATH = resolve(__dirname, '..', '..', 'client', 'dist');
 const app = express();
 const PORT = process.env.PORT || 5000;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
-const FRONTEND_ORIGINS = (process.env.FRONTEND_ORIGIN || 'http://localhost:5173')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
+
+// Always include the Vercel frontend as an allowed origin.
+// FRONTEND_ORIGIN on Render can be set to add more (comma-separated).
+const HARDCODED_ORIGINS = [
+  'https://auth0-tokenflow-server-6yvo.vercel.app',
+  'https://auth0-tokenflow-server-git-master-kavypings-projects.vercel.app',
+];
+const FRONTEND_ORIGINS = [
+  ...HARDCODED_ORIGINS,
+  ...(process.env.FRONTEND_ORIGIN || '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean),
+];
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (server-to-server, health checks, etc.)
+    // Allow no-origin requests (health checks, server-to-server, curl, etc.)
     if (!origin) return callback(null, true);
     if (FRONTEND_ORIGINS.includes(origin)) return callback(null, true);
-    // In production, also allow the server's own origin
+    // Allow all origins in production as a final fallback
     if (IS_PRODUCTION) return callback(null, true);
     callback(new Error(`Origin ${origin} not allowed by CORS`));
   },
   credentials: true,
 }));
+
 
 // Trust proxy headers on Render / Vercel
 if (IS_PRODUCTION) {
