@@ -4,6 +4,9 @@
   "description": "TokenFlow OS Backend — Token engine, policy engine, workflow runner",
   "main": "src/index.js",
   "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js"

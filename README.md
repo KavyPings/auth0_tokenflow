@@ -229,8 +229,55 @@ node --test server/src/tests/testbench.test.js
 
 ## Deployment
 
-- **Frontend**: Vite build → `client/dist`
-- **Backend**: Express serves built frontend when present
-- **Good fit**: Railway, Render, Fly.io
-- **Build command**: `npm install && npm run build`
-- **Start command**: `npm run start`
+### Option A — Full-Stack on Render (Recommended)
+
+Render runs the Express backend which serves the built React frontend and handles WebSocket connections. This is the simplest path.
+
+1. **Push to GitHub**
+2. **Create a Web Service on Render**:
+   - Connect your GitHub repo
+   - Render auto-detects `render.yaml` — verify the settings
+   - **Build Command**: `npm install && npm run build`
+   - **Start Command**: `npm run start`
+3. **Set environment variables** in the Render dashboard:
+   - All Auth0 vars (`AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, etc.)
+   - `FRONTEND_ORIGIN` → your Render URL (e.g. `https://tokenflow-os.onrender.com`)
+   - `NODE_ENV` → `production`
+   - `USE_AUTH0` → `true` or `false`
+4. Deploy — Render builds the Vite frontend, then starts Express which serves it.
+
+### Option B — Frontend on Vercel + Backend on Render
+
+Use this if you want Vercel's CDN for the frontend while running the backend on Render.
+
+**Backend (Render)** — same as Option A above.
+
+**Frontend (Vercel)**:
+1. Import the repo into Vercel
+2. Vercel auto-detects `vercel.json`
+3. Set these environment variables in Vercel's dashboard:
+   - `VITE_API_BASE_URL` → your Render backend URL (e.g. `https://tokenflow-os.onrender.com`)
+   - `VITE_AUTH0_DOMAIN`, `VITE_AUTH0_CLIENT_ID`, `VITE_AUTH0_AUDIENCE`, `VITE_AUTH0_SCOPE`
+4. Set `FRONTEND_ORIGIN` on Render to include your Vercel URL for CORS:
+   - e.g. `https://tokenflow-os.vercel.app`
+5. Update Auth0 allowed callback/logout URLs to include both Render and Vercel domains.
+
+### Environment Variables Reference
+
+| Variable | Where | Description |
+|---|---|---|
+| `PORT` | Render | Server port (Render uses 10000) |
+| `NODE_ENV` | Render | `production` |
+| `DATABASE_URL` | Render | `./tokenflow.db` (SQLite, ephemeral on free tier) |
+| `FRONTEND_ORIGIN` | Render | Comma-separated allowed CORS origins |
+| `AUTH0_DOMAIN` | Render | Auth0 tenant domain |
+| `AUTH0_AUDIENCE` | Render | Auth0 API audience |
+| `AUTH0_CLIENT_ID` | Render | Auth0 app client ID |
+| `AUTH0_CLIENT_SECRET` | Render | Auth0 app client secret |
+| `USE_AUTH0` | Render | `true` for live auth, `false` for mock |
+| `VITE_API_BASE_URL` | Vercel | Backend URL (only for split deploy) |
+| `VITE_AUTH0_DOMAIN` | Vercel | Auth0 tenant domain |
+| `VITE_AUTH0_CLIENT_ID` | Vercel | Auth0 app client ID |
+
+> **Note on SQLite**: Render's free tier uses ephemeral storage — the database resets on redeploy. For persistent data, upgrade to a paid Render plan with a persistent disk, or migrate to PostgreSQL.
+

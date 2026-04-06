@@ -20,15 +20,28 @@ const CLIENT_DIST_PATH = resolve(__dirname, '..', '..', 'client', 'dist');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const FRONTEND_ORIGINS = (process.env.FRONTEND_ORIGIN || 'http://localhost:5173')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
 
 app.use(cors({
-  origin: FRONTEND_ORIGINS,
+  origin: (origin, callback) => {
+    // Allow requests with no origin (server-to-server, health checks, etc.)
+    if (!origin) return callback(null, true);
+    if (FRONTEND_ORIGINS.includes(origin)) return callback(null, true);
+    // In production, also allow the server's own origin
+    if (IS_PRODUCTION) return callback(null, true);
+    callback(new Error(`Origin ${origin} not allowed by CORS`));
+  },
   credentials: true,
 }));
+
+// Trust proxy headers on Render / Vercel
+if (IS_PRODUCTION) {
+  app.set('trust proxy', 1);
+}
 app.use(express.json({ limit: '1mb' }));
 
 app.get('/api/health', (req, res) => {
@@ -107,12 +120,14 @@ const server = createServer(app);
 getDb();
 initWebSocket(server);
 
-server.listen(PORT, () => {
+const HOST = IS_PRODUCTION ? '0.0.0.0' : 'localhost';
+server.listen(PORT, HOST, () => {
   console.log('');
   console.log('==================================================');
   console.log(`  TokenFlow OS v2.0`);
-  console.log(`  Server running on http://localhost:${PORT}`);
-  console.log(`  WebSocket on ws://localhost:${PORT}/ws`);
+  console.log(`  Environment: ${IS_PRODUCTION ? 'PRODUCTION' : 'DEVELOPMENT'}`);
+  console.log(`  Server running on http://${HOST}:${PORT}`);
+  console.log(`  WebSocket on ws://${HOST}:${PORT}/ws`);
   console.log(`  Auth0: ${process.env.USE_AUTH0 === 'true' ? 'LIVE' : 'MOCK MODE'}`);
   console.log('==================================================');
   console.log('');

@@ -1,0 +1,51 @@
+# ──────────────────────────────────────────────────
+# Render Blueprint — TokenFlow OS
+# Deploys the full-stack app as a single Web Service.
+# The Express server serves the built Vite frontend
+# from client/dist and handles API + WebSocket routes.
+# ──────────────────────────────────────────────────
+
+services:
+  - type: web
+    name: tokenflow-os
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        value: ./tokenflow.db
+      - key: FRONTEND_ORIGIN
+        sync: false
+      - key: AUTH0_DOMAIN
+        sync: false
+      - key: AUTH0_AUDIENCE
+        sync: false
+      - key: AUTH0_ISSUER
+        sync: false
+      - key: AUTH0_CLIENT_ID
+        sync: false
+      - key: AUTH0_CLIENT_SECRET
+        sync: false
+      - key: AUTH0_CUSTOM_API_CLIENT_ID
+        sync: false
+      - key: AUTH0_CUSTOM_API_CLIENT_SECRET
+        sync: false
+      - key: USE_AUTH0
+        value: "true"
+      - key: USE_REAL_OPENAI
+        value: "false"
+      - key: USE_REAL_SENDGRID
+        value: "false"
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: SENDGRID_API_KEY
+        sync: false
+      - key: FAIRNESS_THRESHOLD
+        value: "0.20"
+    healthCheckPath: /api/health
